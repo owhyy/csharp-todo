@@ -1,7 +1,14 @@
-﻿namespace ToDo;
+﻿using System.Xml;
+
+namespace ToDo;
 
 public class QuitAppException : Exception
 {
+}
+
+static class Constants
+{
+    public const string FilePath = "./Todos.xml";
 }
 
 public static class ToDoApp
@@ -11,10 +18,25 @@ public static class ToDoApp
         Run();
     }
 
+    private static void WriteTodo(ToDoTask task)
+    {
+        XmlDocument doc = new XmlDocument();
+        doc.AppendChild(doc.CreateElement("todo"));
+        doc.Save(Constants.FilePath);
+    }
+
+    private static List<ToDoTask> ReadPastTodos()
+    {
+        List<ToDoTask> toDoItems = new();
+        XmlDocument xmlDoc = new XmlDocument();
+        return toDoItems;
+    }
+
     private static void Run()
     {
         var currentChoice = 0;
-        List<ToDoTask> toDoItems = new();
+        List<ToDoTask> toDoItems = ReadPastTodos();
+
         while (true)
         {
             Display(toDoItems, currentChoice);
@@ -64,7 +86,11 @@ public static class ToDoApp
                 Console.Write("> ");
                 var newToDo = Console.ReadLine();
                 if (newToDo != null)
-                    tasks.Add(new ToDoTask(newToDo));
+                {
+                    var newTask = new ToDoTask(newToDo);
+                    tasks.Add(newTask);
+                    WriteTodo(newTask);
+                }
 
                 return (tasks, previousChoice);
             }
