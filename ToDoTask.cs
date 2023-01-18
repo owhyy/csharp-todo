@@ -2,13 +2,13 @@ namespace ToDo;
 
 public struct ToDoTask
 {
-    public string Description { get; set; }
-    public bool Status { get; set; }
+    public string Description { get; }
+    public bool IsCompleted { get; set; } = false;
 
-    public ToDoTask(string description, bool status = false)
+    public ToDoTask(string description, bool isCompleted)
     {
         Description = description;
-        Status = status;
+        IsCompleted = isCompleted;
     }
 
     public override string ToString()

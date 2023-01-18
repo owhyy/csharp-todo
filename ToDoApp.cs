@@ -2,13 +2,9 @@
 
 namespace ToDo;
 
-public class QuitAppException : Exception
+internal static class Constants
 {
-}
-
-static class Constants
-{
-    public const string FilePath = "./Todos.xml";
+    public const string FilePath = "todos.xml";
 }
 
 public static class ToDoApp
@@ -18,17 +14,51 @@ public static class ToDoApp
         Run();
     }
 
-    private static void WriteTodo(ToDoTask task)
+    private static void WriteToFile(ToDoTask task)
     {
-        XmlDocument doc = new XmlDocument();
-        doc.AppendChild(doc.CreateElement("todo"));
-        doc.Save(Constants.FilePath);
+        XmlWriterSettings settings = new()
+        {
+            NewLineChars = "\n",
+            NewLineOnAttributes = true,
+            Indent = true,
+            IndentChars = "\t"
+        };
+        using var writer = XmlWriter.Create(Constants.FilePath, settings);
+        writer.WriteStartDocument();
+        writer.WriteStartElement("tasks");
+
+        writer.WriteStartElement("task");
+        writer.WriteAttributeString("status", task.IsCompleted.ToString());
+        writer.WriteString(task.Description);
+        writer.WriteEndElement();
+    }
+
+    private static void WriteAllTasks(List<ToDoTask> tasks)
+    {
+        foreach (var task in tasks)
+        {
+            WriteToFile(task);
+        }
     }
 
     private static List<ToDoTask> ReadPastTodos()
     {
+        XmlReaderSettings settings = new();
         List<ToDoTask> toDoItems = new();
-        XmlDocument xmlDoc = new XmlDocument();
+        using var reader = XmlReader.Create(Constants.FilePath, settings);
+        while (reader.Read())
+        {
+            if (reader.NodeType == XmlNodeType.Element && reader is { Name: "task", HasAttributes: true })
+            {
+                var description = reader.ReadString();
+                var status = reader.GetAttribute("status");
+                var isCompleted = false;
+                if (status != null)
+                    bool.TryParse(status, out isCompleted);
+                toDoItems.Add(new ToDoTask(description, isCompleted));
+            }
+        }
+
         return toDoItems;
     }
 
@@ -59,7 +89,7 @@ public static class ToDoApp
         for (var i = 0; i < tasks.Count; i++)
         {
             var task = tasks[i];
-            var taskAsStr = $"{(task.Status ? "[x]" : "[]")} {task.Description}";
+            var taskAsStr = $"{(task.IsCompleted ? "[x]" : "[]")} {task.Description}";
             if (i == currentChoice)
                 taskAsStr = $"> {taskAsStr}";
             Console.WriteLine(taskAsStr);
@@ -73,6 +103,19 @@ public static class ToDoApp
         Console.WriteLine("Exit the program by pressing q");
     }
 
+    private static ToDoTask TryToCreate(string? description, bool isCompleted, List<ToDoTask> otherTasks)
+    {
+        if (description is null)
+            throw new ArrayTypeMismatchException("Enter a valid description");
+
+        bool isUniqueTask = otherTasks.All(t => t.Description != description);
+        if (isUniqueTask)
+            return new ToDoTask(description, isCompleted);
+
+        throw new NonUniqueDescriptionException(
+            "A entry with that description already exists. Please pick a different name");
+    }
+
     private static (List<ToDoTask>, int) HandleKeyPress(List<ToDoTask> tasks, int previousChoice)
     {
         switch (Console.ReadKey(true).Key)
@@ -84,12 +127,18 @@ public static class ToDoApp
             case ConsoleKey.C:
             {
                 Console.Write("> ");
-                var newToDo = Console.ReadLine();
-                if (newToDo != null)
+                var taskDescription = Console.ReadLine();
+                try
                 {
-                    var newTask = new ToDoTask(newToDo);
-                    tasks.Add(newTask);
-                    WriteTodo(newTask);
+                    ToDoTask task = TryToCreate(taskDescription, false, tasks);
+                    tasks.Add(task);
+                    WriteToFile(task);
+                }
+                catch (Exception e) when (e is NonUniqueDescriptionException or ArgumentException)
+                {
+                    Console.WriteLine(e.Message);
+                    Console.WriteLine("Press any key to continue");
+                    Console.ReadKey();
                 }
 
                 return (tasks, previousChoice);
@@ -98,7 +147,7 @@ public static class ToDoApp
             {
                 if (tasks.Count == 0) break;
                 var currentTask = tasks[previousChoice];
-                currentTask.Status = !currentTask.Status;
+                currentTask.IsCompleted = !currentTask.IsCompleted;
                 tasks[previousChoice] = currentTask;
 
                 return (tasks, previousChoice);
@@ -106,13 +155,36 @@ public static class ToDoApp
             case ConsoleKey.E:
             {
                 if (tasks.Count == 0) break;
+                var previousTask = tasks[previousChoice];
+
                 Console.Write("> ");
                 var newDescription = Console.ReadLine();
 
-                if (newDescription == null) break;
-                var taskModified = tasks[previousChoice];
-                taskModified.Description = newDescription;
-                tasks[previousChoice] = taskModified;
+                try
+                {
+                    ToDoTask modifiedTask = TryToCreate(newDescription, previousTask.IsCompleted, tasks);
+                    tasks[previousChoice] = modifiedTask;
+                }
+                catch (NonUniqueDescriptionException e)
+                {
+                    // don't display message if descriptions are the same
+                    if (newDescription != previousTask.Description)
+                    {
+                        Console.WriteLine(e.Message);
+                        Console.WriteLine("Press any key to continue");
+                        Console.ReadKey();
+                    }
+                }
+                catch (ArgumentException e)
+                {
+                    Console.WriteLine(e.Message);
+                    Console.WriteLine("Press any key to continue");
+                    Console.ReadKey();
+                }
+
+                // TODO: this is obviously ineffective, we should ideally 
+                // somehow only update the specified one, but it works for now
+                WriteAllTasks(tasks);
 
                 return (tasks, previousChoice);
             }
@@ -120,7 +192,7 @@ public static class ToDoApp
             {
                 if (tasks.Count != 0)
                     tasks.RemoveAt(previousChoice);
-                return (tasks, previousChoice);
+                return (tasks, --previousChoice);
             }
 
             case ConsoleKey.Q:
