@@ -1,4 +1,5 @@
 ﻿using System.Xml;
+using System.Xml.Linq;
 
 namespace ToDo;
 
@@ -9,35 +10,31 @@ internal static class Constants
 
 public static class ToDoApp
 {
-    public static void Main()
-    {
-        Run();
-    }
-
     private static void WriteToFile(ToDoTask task)
     {
-        XmlWriterSettings settings = new()
+        XDocument doc;
+        try
         {
-            NewLineChars = "\n",
-            NewLineOnAttributes = true,
-            Indent = true,
-            IndentChars = "\t"
-        };
-        using var writer = XmlWriter.Create(Constants.FilePath, settings);
-        writer.WriteStartDocument();
-        writer.WriteStartElement("tasks");
+            doc = XDocument.Load(Constants.FilePath);
+        }
+        catch (XmlException)
+        {
+            doc = new XDocument(new XElement("Tasks"));
+        }
 
-        writer.WriteStartElement("task");
-        writer.WriteAttributeString("status", task.IsCompleted.ToString());
-        writer.WriteString(task.Description);
-        writer.WriteEndElement();
+        var tasks = doc.Element("Tasks");
+        tasks?.Add(new XElement("Task",
+            new XAttribute("ID", task.Id),
+            new XAttribute("IsCompleted", task.IsCompleted),
+            new XElement("Description", task.Description)));
+        doc.Save(Constants.FilePath);
     }
 
     private static void WriteAllTasks(List<ToDoTask> tasks)
     {
-        foreach (var task in tasks)
+        foreach (var t in tasks)
         {
-            WriteToFile(task);
+            WriteToFile(t);
         }
     }
 
@@ -45,24 +42,32 @@ public static class ToDoApp
     {
         XmlReaderSettings settings = new();
         List<ToDoTask> toDoItems = new();
-        using var reader = XmlReader.Create(Constants.FilePath, settings);
-        while (reader.Read())
+        try
         {
-            if (reader.NodeType == XmlNodeType.Element && reader is { Name: "task", HasAttributes: true })
+            using var reader = XmlReader.Create(Constants.FilePath, settings);
+            while (reader.Read())
             {
-                var description = reader.ReadString();
-                var status = reader.GetAttribute("status");
-                var isCompleted = false;
-                if (status != null)
-                    bool.TryParse(status, out isCompleted);
-                toDoItems.Add(new ToDoTask(description, isCompleted));
+                if (reader.NodeType == XmlNodeType.Element && reader is { Name: "task", HasAttributes: true })
+                {
+                    var status = reader.GetAttribute("status");
+                    var description = reader.ReadString();
+                    Console.WriteLine(status);
+                    var isCompleted = false;
+                    if (status != null)
+                        bool.TryParse(status, out isCompleted);
+                    toDoItems.Add(new ToDoTask(description, isCompleted));
+                }
             }
+        }
+        catch (FileNotFoundException)
+        {
+            // don't do anything
         }
 
         return toDoItems;
     }
 
-    private static void Run()
+    public static void Run()
     {
         var currentChoice = 0;
         List<ToDoTask> toDoItems = ReadPastTodos();
@@ -103,7 +108,7 @@ public static class ToDoApp
         Console.WriteLine("Exit the program by pressing q");
     }
 
-    private static ToDoTask TryToCreate(string? description, bool isCompleted, List<ToDoTask> otherTasks)
+    private static ToDoTask TryCreate(string? description, bool isCompleted, List<ToDoTask> otherTasks)
     {
         if (description is null)
             throw new ArrayTypeMismatchException("Enter a valid description");
@@ -130,7 +135,7 @@ public static class ToDoApp
                 var taskDescription = Console.ReadLine();
                 try
                 {
-                    ToDoTask task = TryToCreate(taskDescription, false, tasks);
+                    ToDoTask task = TryCreate(taskDescription, false, tasks);
                     tasks.Add(task);
                     WriteToFile(task);
                 }
@@ -162,7 +167,7 @@ public static class ToDoApp
 
                 try
                 {
-                    ToDoTask modifiedTask = TryToCreate(newDescription, previousTask.IsCompleted, tasks);
+                    ToDoTask modifiedTask = TryCreate(newDescription, previousTask.IsCompleted, tasks);
                     tasks[previousChoice] = modifiedTask;
                 }
                 catch (NonUniqueDescriptionException e)
@@ -182,7 +187,7 @@ public static class ToDoApp
                     Console.ReadKey();
                 }
 
-                // TODO: this is obviously ineffective, we should ideally 
+                // TODO: this is obviously ineffective, we should ideally
                 // somehow only update the specified one, but it works for now
                 WriteAllTasks(tasks);
 
